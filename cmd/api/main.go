@@ -1,6 +1,7 @@
 package main
 
 import (
+	"live-chat-backend/internal/auth"
 	"log"
 	"os"
 
@@ -26,17 +27,20 @@ func main() {
 
 	app := fiber.New()
 
-	// middlewares
+	// Global middlewares
 	app.Use(logger.New())
 	app.Use(recover.New())
 	app.Use(cors.New())
 	app.Use(helmet.New())
 	app.Use(compress.New())
 
-	// routes
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("API is running !")
 	})
+
+	// routes
+	authGroup := app.Group("/auth")
+	auth.SetupRoutes(authGroup)
 
 	app.Listen(":" + port)
 }

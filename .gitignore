@@ -12,6 +12,10 @@
 /build/
 /dist/
 
+# Air config and logs
+.air.toml
+/.tmp_air/
+
 # Go workspace file
 go.work
 
