@@ -5,8 +5,11 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
 )
 
@@ -25,7 +28,10 @@ func main() {
 
 	// middlewares
 	app.Use(logger.New())
+	app.Use(recover.New())
 	app.Use(cors.New())
+	app.Use(helmet.New())
+	app.Use(compress.New())
 
 	// routes
 	app.Get("/", func(c *fiber.Ctx) error {
