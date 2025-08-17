@@ -24,7 +24,6 @@ go.work
 
 # Environment files
 .env
-.env.*
 
 # IDE/editor files
 .vscode/
