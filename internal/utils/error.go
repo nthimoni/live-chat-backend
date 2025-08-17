@@ -14,13 +14,13 @@ func FormatValidationError(err error) (msg map[string]string, httpStatus int) {
 		fieldName := strings.ToLower(string(e.Field()[0])) + e.Field()[1:]
 		switch e.Tag() {
 		case "required":
-			errors[fieldName] = "This field is required"
+			errors[fieldName] = "this field is required"
 		case "email":
-			errors[fieldName] = "Invalid email format"
+			errors[fieldName] = "invalid email format"
 		case "min":
-			errors[fieldName] = "Too short"
+			errors[fieldName] = "too short"
 		default:
-			errors[fieldName] = "Invalid value"
+			errors[fieldName] = "invalid value"
 		}
 	}
 
@@ -36,13 +36,13 @@ func FormatRegisterUserError(err error) (msg string, httpStatus int) {
 	if strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
 		// postgre uniqueness error
 		if strings.Contains(err.Error(), "users_email") {
-			return "Email is already in use", fiber.StatusConflict
+			return "email is already in use", fiber.StatusConflict
 		} else if strings.Contains(err.Error(), "users_username") {
-			return "Username is already taken", fiber.StatusConflict
+			return "username is already taken", fiber.StatusConflict
 		}
 	}
 
 	// unknown error
-	log.Println("Unexpected error during user registration:", err)
-	return "An error occurred while registering the user, please try again later", fiber.StatusInternalServerError
+	log.Println("unexpected error during user registration:", err)
+	return "an error occurred while registering the user, please try again later", fiber.StatusInternalServerError
 }

@@ -21,3 +21,8 @@ type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"` // password policy is verified in the service layer
 }
+
+type LoginResponse struct {
+	User  UserDTO `json:"user"`
+	Token string  `json:"token"`
+}

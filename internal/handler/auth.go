@@ -23,16 +23,17 @@ var validate = validator.New()
 
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
-	var user dto.RegisterUserRequest
+	var payloadUser dto.RegisterUserRequest
 
-	err := c.BodyParser(&user)
+	err := c.BodyParser(&payloadUser)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid JSON body",
+			"error":   http.StatusText(fiber.StatusBadRequest),
+			"message": "Invalid JSON body",
 		})
 	}
 
-	err = validate.Struct(user)
+	err = validate.Struct(payloadUser)
 	if err != nil {
 		msg, status := utils.FormatValidationError(err)
 		return c.Status(status).JSON(fiber.Map{
@@ -41,7 +42,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		})
 	}
 
-	userModel, err := h.authService.RegisterUser(user.Username, user.Email, user.Password)
+	registeredUser, err := h.authService.RegisterUser(payloadUser.Username, payloadUser.Email, payloadUser.Password)
 	if err != nil {
 		msg, status := utils.FormatRegisterUserError(err)
 		return c.Status(status).JSON(fiber.Map{
@@ -50,7 +51,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		})
 	}
 
-	token, err := h.authService.GenerateUserJWT(userModel.ID, userModel.Email)
+	token, err := h.authService.GenerateUserJWT(registeredUser.ID, registeredUser.Email)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   http.StatusText(fiber.StatusInternalServerError),
@@ -60,14 +61,63 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(dto.RegisterUserResponse{
 		User: dto.UserDTO{
-			ID:       fmt.Sprint(userModel.ID),
-			Email:    userModel.Email,
-			Username: userModel.Username,
+			ID:       fmt.Sprint(registeredUser.ID),
+			Email:    registeredUser.Email,
+			Username: registeredUser.Username,
 		},
 		Token: token,
 	})
 }
 
-func (authHandler *AuthHandler) Login(c *fiber.Ctx) error {
-	return c.SendString("Login")
+func (h *AuthHandler) Login(c *fiber.Ctx) error {
+
+	var payloadUser dto.LoginRequest
+
+	err := c.BodyParser(&payloadUser)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   http.StatusText(fiber.StatusBadRequest),
+			"message": "Invalid JSON body",
+		})
+	}
+
+	err = validate.Struct(payloadUser)
+	if err != nil {
+		msg, status := utils.FormatValidationError(err)
+		return c.Status(status).JSON(fiber.Map{
+			"error":   http.StatusText(status),
+			"message": msg,
+		})
+	}
+
+	loggedUser, err := h.authService.LoginUser(payloadUser.Email, payloadUser.Password)
+	if err != nil {
+		var status int
+		if err.Error() == "invalid credentials" {
+			status = fiber.StatusUnauthorized
+		} else {
+			status = fiber.StatusInternalServerError
+		}
+		return c.Status(status).JSON(fiber.Map{
+			"error":   http.StatusText(status),
+			"message": err.Error(),
+		})
+	}
+
+	token, err := h.authService.GenerateUserJWT(loggedUser.ID, loggedUser.Email)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   http.StatusText(fiber.StatusInternalServerError),
+			"message": "Failed to generate JWT, retry later",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(dto.RegisterUserResponse{
+		User: dto.UserDTO{
+			ID:       fmt.Sprint(loggedUser.ID),
+			Email:    loggedUser.Email,
+			Username: loggedUser.Username,
+		},
+		Token: token,
+	})
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AuthService struct {
@@ -46,36 +47,39 @@ func (s *AuthService) RegisterUser(username, email, password string) (*models.Us
 	return user, nil
 }
 
-type JWTClaims struct {
-	UserID uint   `json:"sub"`
-	Email  string `json:"email"`
-	Role   string `json:"role,omitempty"`
-	jwt.RegisteredClaims
-}
-
-func (s *AuthService) GenerateUserJWT(userID uint, email string) (string, error) {
-	var now time.Time = time.Now()
-
-	claims := JWTClaims{
-		UserID: userID,
-		Email:  email,
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)), // 24 hour validity
-			Issuer:    "live-chat",
-		},
+func (s *AuthService) LoginUser(email, password string) (*models.User, error) {
+	// check password policy to avoid useless call to the database
+	err := s.ValidatePasswordPolicy(password)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	user, err := s.userRepo.FindByEmail(email)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("invalid credentials")
+		}
+		// likely db connection error
+		return nil, fmt.Errorf("unable to verify credentials, please try again later")
+	}
+
+	if !CheckPassword(user.Password, password) {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
+	return user, nil
 }
 
 func (s *AuthService) ValidatePasswordPolicy(password string) error {
 	const minLength = 8
+	const maxLength = 72 // maximum length handled by bcrypt
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
 
 	if len(password) < minLength {
 		return fmt.Errorf("password must be at least %d characters", minLength)
+	}
+	if (len(password)) > maxLength {
+		return fmt.Errorf("password must be at most %d characters", maxLength)
 	}
 
 	for _, c := range password {
@@ -118,4 +122,28 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(hashedPassword, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	return err == nil
+}
+
+type JWTClaims struct {
+	UserID uint   `json:"sub"`
+	Email  string `json:"email"`
+	Role   string `json:"role,omitempty"`
+	jwt.RegisteredClaims
+}
+
+func (s *AuthService) GenerateUserJWT(userID uint, email string) (string, error) {
+	var now time.Time = time.Now()
+
+	claims := JWTClaims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)), // 24 hour validity
+			Issuer:    "live-chat",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.jwtSecret)
 }
