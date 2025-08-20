@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"live-chat-backend/internal/handler"
+	"live-chat-backend/internal/middleware"
 	"live-chat-backend/internal/models"
 	"live-chat-backend/internal/repository"
 	"live-chat-backend/internal/service"
@@ -52,6 +53,9 @@ func main() {
 	// Instanciate the handlers
 	authHandler := handler.NewAuthHandler(authService)
 
+	//Instanciate the middleware
+	JWTauthMiddleware := middleware.NewJWTAuth(authService)
+
 	// Global middlewares
 	app.Use(logger.New())
 	app.Use(recover.New())
@@ -65,6 +69,15 @@ func main() {
 	authGroup := api.Group("/auth")
 	authGroup.Post("/register", authHandler.Register)
 	authGroup.Post("/login", authHandler.Login)
+
+	// route to test authentication middleware
+	app.Get("/isAuthenticated", JWTauthMiddleware, func(c *fiber.Ctx) error {
+		log.Println(c.Locals("user").(*models.User).ID)
+		log.Println(c.Locals("user").(*models.User).Email)
+		log.Println(c.Locals("user").(*models.User).Username)
+
+		return c.SendString("You're authenticated!")
+	})
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("API is running !")
@@ -86,7 +99,9 @@ func connectToDatabase() (*gorm.DB, error) {
 		os.Getenv("DB_TIMEZONE"),
 	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		TranslateError: true,
+	})
 	if err != nil {
 		return nil, err
 	}

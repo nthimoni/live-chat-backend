@@ -1,9 +1,11 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"live-chat-backend/internal/models"
 	"live-chat-backend/internal/repository"
+	"log"
 	"time"
 	"unicode"
 
@@ -11,6 +13,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+var ErrInvalidCredentials = errors.New("invalid credentials")
+var ErrPasswordPolicy = errors.New("invalid password policy")
 
 type AuthService struct {
 	jwtSecret []byte
@@ -51,15 +56,17 @@ func (s *AuthService) LoginUser(email, password string) (*models.User, error) {
 	// check password policy to avoid useless call to the database
 	err := s.ValidatePasswordPolicy(password)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, errors.New("invalid credentials")
 	}
 
 	user, err := s.userRepo.FindByEmail(email)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("invalid credentials")
-		}
-		// likely db connection error
+	if err == gorm.ErrRecordNotFound {
+		fmt.Println("user not found:", err)
+		return nil, errors.New("invalid credentials")
+
+	} else if err != nil {
+		// Do not expose database errors to the user
+		log.Println("database error", err)
 		return nil, fmt.Errorf("unable to verify credentials, please try again later")
 	}
 
@@ -76,10 +83,10 @@ func (s *AuthService) ValidatePasswordPolicy(password string) error {
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
 
 	if len(password) < minLength {
-		return fmt.Errorf("password must be at least %d characters", minLength)
+		return fmt.Errorf("%w: password must be at least %d characters", ErrPasswordPolicy, minLength)
 	}
 	if (len(password)) > maxLength {
-		return fmt.Errorf("password must be at most %d characters", maxLength)
+		return fmt.Errorf("%w: password must be at most %d characters", ErrPasswordPolicy, maxLength)
 	}
 
 	for _, c := range password {
@@ -96,16 +103,16 @@ func (s *AuthService) ValidatePasswordPolicy(password string) error {
 	}
 
 	if !hasUpper {
-		return fmt.Errorf("password must contain at least one uppercase letter")
+		return fmt.Errorf("%w: password must contain at least one uppercase letter", ErrPasswordPolicy)
 	}
 	if !hasLower {
-		return fmt.Errorf("password must contain at least one lowercase letter")
+		return fmt.Errorf("%w: password must contain at least one lowercase letter", ErrPasswordPolicy)
 	}
 	if !hasDigit {
-		return fmt.Errorf("password must contain at least one digit")
+		return fmt.Errorf("%w: password must contain at least one digit", ErrPasswordPolicy)
 	}
 	if !hasSpecial {
-		return fmt.Errorf("password must contain at least one special character")
+		return fmt.Errorf("%w: password must contain at least one special character", ErrPasswordPolicy)
 	}
 
 	return nil
@@ -125,18 +132,15 @@ func CheckPassword(hashedPassword, password string) bool {
 }
 
 type JWTClaims struct {
-	UserID uint   `json:"sub"`
-	Email  string `json:"email"`
-	Role   string `json:"role,omitempty"`
+	UserID uint `json:"sub"`
 	jwt.RegisteredClaims
 }
 
-func (s *AuthService) GenerateUserJWT(userID uint, email string) (string, error) {
+func (s *AuthService) GenerateUserJWT(userID uint) (string, error) {
 	var now time.Time = time.Now()
 
 	claims := JWTClaims{
 		UserID: userID,
-		Email:  email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)), // 24 hour validity
@@ -146,4 +150,35 @@ func (s *AuthService) GenerateUserJWT(userID uint, email string) (string, error)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
+}
+
+func (s *AuthService) ValidateTokenAndGetUser(tokenToValidate string) (*models.User, error) {
+	token, err := jwt.ParseWithClaims(tokenToValidate, &JWTClaims{}, s.getTokenSigningKey)
+
+	if err != nil || !token.Valid {
+		log.Println("token error", err)
+		return nil, errors.New("invalid or expired token")
+	}
+
+	claims := token.Claims.(*JWTClaims)
+
+	user, err := s.userRepo.FindById(claims.UserID)
+	if err == gorm.ErrRecordNotFound {
+		return nil, errors.New("user not found")
+	} else if err != nil {
+		log.Println("database error", err)
+		return nil, errors.New("unable to retrieve user")
+	}
+
+	return user, nil
+}
+
+func (s *AuthService) getTokenSigningKey(token *jwt.Token) (any, error) {
+	// type assertion to verify the signing method
+	_, isValidSigningMthod := token.Method.(*jwt.SigningMethodHMAC)
+	if !isValidSigningMthod {
+		return nil, errors.New("invalid signing method")
+	}
+
+	return s.jwtSecret, nil
 }
